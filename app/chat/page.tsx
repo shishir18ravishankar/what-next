@@ -252,7 +252,6 @@ export default function ChatPage() {
   const startNewChat = () => {
     setConversationId(null);
     setMessages([]);
-    setCurrentStage(0);
     setShowFinishButton(false);
     setGeneratingRecommendation(false);
     setApiError(null);
