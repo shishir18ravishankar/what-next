@@ -17,7 +17,7 @@ An AI-powered career guidance platform for Indian students who just completed 12
 - **Framework**: Next.js 14 (App Router)
 - **Styling**: Tailwind CSS
 - **Database & Auth**: Supabase
-- **AI**: OpenAI GPT-4o
+- **AI**: Groq (`llama-3.3-70b-versatile`)
 - **UI Components**: Lucide React icons
 
 ## Getting Started
@@ -26,7 +26,7 @@ An AI-powered career guidance platform for Indian students who just completed 12
 
 - Node.js 18+ installed
 - A Supabase account and project
-- An OpenAI API key
+- A Groq API key ([Groq Console](https://console.groq.com/keys))
 
 ### Installation
 
@@ -47,11 +47,14 @@ Create a `.env.local` file in the root directory with the following variables:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-OPENAI_API_KEY=your_openai_api_key
+# Supabase publishable key (preferred)
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
+# Legacy fallback (only if you don't have a publishable key)
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+GROQ_API_KEY=your_groq_api_key
 ```
 
-**Note**: The Supabase credentials are already configured in the `.env` file. You only need to add your OpenAI API key.
+**Note**: Add your Supabase and `GROQ_API_KEY` values to `.env.local`.
 
 4. The database schema is already set up in Supabase with the following tables:
    - `conversations` - Stores chat conversations
@@ -177,7 +180,7 @@ Generates structured career recommendations based on the full conversation.
 - Row Level Security (RLS) is enabled on all tables
 - Users can only access their own data
 - Authentication is handled securely via Supabase Auth
-- OpenAI API key is stored as an environment variable
+- Groq API key is stored as a server-only environment variable (`GROQ_API_KEY`)
 
 ## Future Enhancements
 

@@ -21,7 +21,7 @@ export default function AuthPage() {
     const checkExistingSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        router.push('/start');
+        router.push('/chat');
       }
       setPageLoading(false);
     };
@@ -46,10 +46,20 @@ export default function AuthPage() {
           return;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-        router.push('/start');
+        // Ensure the session cookie/storage is available before redirecting.
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          setError('Login succeeded but no session was found. Please try again.');
+          setLoading(false);
+          return;
+        }
+
+        router.push('/chat');
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -65,8 +75,17 @@ export default function AuthPage() {
           return;
         }
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-        router.push('/start');
+        // If email confirmation is required, Supabase will return `session: null`.
+        if (!data.session) {
+          setError(
+            'Account created. Please confirm your email before signing in.'
+          );
+          setIsLogin(true);
+          setLoading(false);
+          return;
+        }
+
+        router.push('/chat');
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication');

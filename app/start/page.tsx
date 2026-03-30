@@ -11,6 +11,8 @@ type Situation = 'no_idea' | 'comparing' | 'unsure';
 export default function StartPage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selecting, setSelecting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -34,22 +36,41 @@ export default function StartPage() {
   };
 
   const selectSituation = async (situation: Situation) => {
-    if (!user) return;
+    setSelecting(true);
+    setActionError(null);
+
+    // Don't rely on the `user` React state being populated yet; read from Supabase at click time.
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      setSelecting(false);
+      router.push('/auth');
+      return;
+    }
 
     localStorage.setItem('situation', situation);
 
-    const { error } = await supabase.from('conversations').insert({
-      user_id: user.id,
-      situation: situation,
-      messages: [],
-      completed: false,
-    });
+    const { data: inserted, error: insertError } = await supabase
+      .from('conversations')
+      .insert({
+        user_id: userData.user.id,
+        situation,
+        messages: [],
+        completed: false,
+      })
+      .select('id')
+      .single();
 
-    if (error) {
-      console.error('Error creating conversation:', error);
+    if (insertError || !inserted?.id) {
+      console.error('Error creating conversation:', insertError);
+      setActionError(
+        insertError?.message ??
+          'Could not start a new conversation. Please try again.'
+      );
+      setSelecting(false);
+      return;
     }
 
-    router.push('/chat');
+    router.push(`/chat?conversationId=${encodeURIComponent(inserted.id)}`);
   };
 
   if (loading) {
@@ -89,9 +110,17 @@ export default function StartPage() {
             </p>
           </div>
 
+          {actionError && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {actionError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <button
+              type="button"
               onClick={() => selectSituation('no_idea')}
+              disabled={selecting}
               className="group p-8 bg-white border-2 border-gray-200 rounded-lg hover:border-[#6C63FF] hover:shadow-lg transition-all text-left"
             >
               <div className="w-12 h-12 bg-[#6C63FF]/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-[#6C63FF] transition-colors">
@@ -106,7 +135,9 @@ export default function StartPage() {
             </button>
 
             <button
+              type="button"
               onClick={() => selectSituation('comparing')}
+              disabled={selecting}
               className="group p-8 bg-white border-2 border-gray-200 rounded-lg hover:border-[#6C63FF] hover:shadow-lg transition-all text-left"
             >
               <div className="w-12 h-12 bg-[#6C63FF]/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-[#6C63FF] transition-colors">
@@ -121,7 +152,9 @@ export default function StartPage() {
             </button>
 
             <button
+              type="button"
               onClick={() => selectSituation('unsure')}
+              disabled={selecting}
               className="group p-8 bg-white border-2 border-gray-200 rounded-lg hover:border-[#6C63FF] hover:shadow-lg transition-all text-left"
             >
               <div className="w-12 h-12 bg-[#6C63FF]/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-[#6C63FF] transition-colors">

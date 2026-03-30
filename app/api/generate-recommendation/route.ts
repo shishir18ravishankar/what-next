@@ -1,57 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
-import { createClient } from '@/lib/supabase/server';
+import Groq from 'groq-sdk';
+import { getUserForApiRoute } from '@/lib/supabase/api-route';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY,
 });
+
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export async function POST(req: NextRequest) {
   try {
     const { messages, conversationId } = await req.json();
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json(
+        { error: 'Missing GROQ_API_KEY in server environment' },
+        { status: 500 }
+      );
+    }
 
-    if (!user) {
+    const { supabase, user, error: authError } = await getUserForApiRoute(req);
+
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const prompt = `Based on the entire conversation above, generate a structured career recommendation for this Indian student who just finished 12th grade.
+    const prompt = `You are the structured output engine for "What Next" — same voice as the chat: warm, real, like a trusted older cousin for Indian 12th-pass students choosing a bachelor's degree. Focus ONLY on degree fit (not colleges or unrelated life advice).
 
-Provide your response in the following JSON format:
+From the full conversation, produce a recommendation that could ONLY apply to this student — cite their situation, personality, money reality, and India job market honestly. Never recommend a field just because it is popular.
+
+Provide your response in the following JSON format only:
 {
   "best_fit": {
     "field": "Field name",
     "degrees": ["Degree 1", "Degree 2"],
     "jobs": ["Job 1", "Job 2", "Job 3"],
     "avg_salary": "Salary range in India",
-    "why": "Clear explanation of why this fits the student"
+    "why": "Why THIS degree fits THIS student specifically (personality, interests, strengths, family money, India reality)"
   },
   "secondary": {
     "field": "Field name",
     "degrees": ["Degree 1", "Degree 2"],
     "jobs": ["Job 1", "Job 2", "Job 3"],
     "avg_salary": "Salary range in India",
-    "why": "Why this is worth considering"
+    "why": "Why this is also worth considering and how it differs from best fit"
   },
   "avoid": {
     "field": "Field name",
-    "why": "Clear reasoning for why to avoid this path"
+    "why": "Gentle, specific honesty if they leaned toward a poor fit for them — not generic fear"
   },
   "reasoning": {
-    "interests": "Summary of their interests",
-    "skills": "Summary of their skills",
-    "lifestyle": "Their lifestyle preferences",
-    "finances": "Financial considerations",
-    "market": "Job market insights for India"
+    "interests": "Their interests and passions as understood from the chat",
+    "skills": "Their strengths and abilities",
+    "lifestyle": "Personality, work style, how they like to spend energy (use this for self-awareness too)",
+    "finances": "Family situation and financial reality, sensitively",
+    "market": "India job market reality for the paths discussed"
   }
 }
 
 Be specific, realistic, and India-focused. Only recommend fields with genuine job opportunities.`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
       messages: [
         ...messages,
         { role: 'user', content: prompt },
@@ -60,7 +70,15 @@ Be specific, realistic, and India-focused. Only recommend fields with genuine jo
       temperature: 0.7,
     });
 
-    const recommendation = JSON.parse(completion.choices[0].message.content || '{}');
+    const raw = completion.choices[0]?.message?.content || '{}';
+    let recommendation: Record<string, unknown>;
+    try {
+      recommendation = JSON.parse(raw);
+    } catch {
+      // Model sometimes wraps JSON in markdown fences
+      const trimmed = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+      recommendation = JSON.parse(trimmed);
+    }
 
     const { data, error } = await supabase
       .from('recommendations')

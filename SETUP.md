@@ -2,24 +2,23 @@
 
 ## Quick Start
 
-### Step 1: Get Your OpenAI API Key
+### Step 1: Get Your Groq API Key
 
-1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
+1. Go to [Groq Console](https://console.groq.com/keys)
 2. Sign in or create an account
-3. Click "Create new secret key"
-4. Copy the API key (starts with `sk-`)
-5. **Important**: Save this key securely - you won't be able to see it again!
+3. Create an API key and copy it
+4. **Important**: Save this key securely
 
-### Step 2: Add OpenAI API Key to Environment
+### Step 2: Add Groq API Key to Environment
 
-1. Open the `.env` file in the project root
-2. Replace `your_openai_api_key_here` with your actual OpenAI API key:
+1. Open `.env.local` in the project root (create it if needed)
+2. Set your Groq key:
 
 ```env
-OPENAI_API_KEY=sk-your-actual-key-here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
-**Note**: The Supabase credentials are already configured and working!
+**Note**: Also add your Supabase URL and publishable key (see `.env.example`).
 
 ### Step 3: Run the Application
 
@@ -83,14 +82,15 @@ The app will be available at `http://localhost:3000`
 - Check that Supabase credentials are correct in `.env`
 
 ### AI Not Responding
-- Verify your OpenAI API key is correct in `.env`
-- Check that you have credits in your OpenAI account
+- Verify `GROQ_API_KEY` is set in `.env.local` and restart `npm run dev`
+- Check server logs for Groq errors
 - Look at the browser console for error messages
 
 ### Database Errors
 - The database schema is already set up in Supabase
 - If you see RLS errors, make sure you're authenticated
 - Check that your Supabase project is active
+- If **chat messages never save** to `conversations`, run the SQL in `supabase/migrations/20260320120000_fix_conversations_rls_and_grants.sql` in the Supabase SQL Editor (fixes GRANTs + RLS policies). The app also sends `Authorization: Bearer <access_token>` to `/api/chat` so the server can write under your user’s JWT.
 
 ### Build Errors
 - Run `npm install` to ensure all dependencies are installed
@@ -100,18 +100,17 @@ The app will be available at `http://localhost:3000`
 ## Environment Variables Explained
 
 ```env
-# Supabase Configuration (Already Set Up)
-NEXT_PUBLIC_SUPABASE_URL=https://tsyzwcyxaiwcmtvfqdkl.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 
-# OpenAI Configuration (You Need to Add This)
-OPENAI_API_KEY=sk-your-key-here
+GROQ_API_KEY=your_groq_key
 ```
 
 ### Why NEXT_PUBLIC_* prefix?
 - Environment variables with `NEXT_PUBLIC_` are exposed to the browser
-- The Supabase URL and anon key are safe to expose (they're public)
-- The OpenAI API key does NOT have this prefix (it's server-only for security)
+- The Supabase URL and publishable key are safe to expose (they're public)
+- `GROQ_API_KEY` does NOT use this prefix (server-only)
 
 ## Database Information
 
@@ -125,11 +124,9 @@ All tables have Row Level Security (RLS) enabled, so users can only access their
 
 ## Cost Information
 
-### OpenAI API Costs
-- Model used: GPT-4o
-- Approximate cost per conversation: $0.05 - $0.15
-- Recommendation generation: $0.10 - $0.20
-- Total per user: ~$0.15 - $0.35
+### Groq API
+- Model used: `llama-3.3-70b-versatile`
+- See [Groq pricing](https://groq.com/pricing) for current rates and limits
 
 ### Supabase Costs
 - Free tier includes:
@@ -147,7 +144,7 @@ All tables have Row Level Security (RLS) enabled, so users can only access their
 4. **AWS/Google Cloud** (more advanced)
 
 ### Pre-deployment Checklist
-- [ ] Add OpenAI API key to environment variables
+- [ ] Add `GROQ_API_KEY` to environment variables
 - [ ] Verify Supabase credentials are correct
 - [ ] Test the complete user flow
 - [ ] Update metadata in `app/layout.tsx`
@@ -163,8 +160,8 @@ All tables have Row Level Security (RLS) enabled, so users can only access their
 4. Import your GitHub repository
 5. Add environment variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `OPENAI_API_KEY`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `GROQ_API_KEY`
 6. Click "Deploy"
 
 ## Support
@@ -175,7 +172,7 @@ If you encounter any issues:
 2. Check the terminal/server logs
 3. Verify all environment variables are set correctly
 4. Make sure you're using the latest version of the code
-5. Ensure your OpenAI account has available credits
+5. Check Groq console for API limits or key issues
 
 ## Next Steps
 
@@ -183,7 +180,7 @@ After setting up the application:
 
 1. Test the complete flow yourself
 2. Gather feedback from real users
-3. Monitor OpenAI API usage and costs
+3. Monitor Groq API usage
 4. Consider adding analytics (e.g., PostHog, Google Analytics)
 5. Set up error tracking (e.g., Sentry)
 6. Plan for scaling if user base grows
