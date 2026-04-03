@@ -110,10 +110,16 @@ export default function ChatPage() {
     msgs: Message[],
     situation: string,
   ): Promise<void> => {
+    let onboardingData: object | null = null;
+    try {
+      const raw = localStorage.getItem('onboardingData');
+      if (raw) onboardingData = JSON.parse(raw);
+    } catch {}
+
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: await chatApiHeaders(),
-      body: JSON.stringify({ messages: msgs, situation, conversationId: convId }),
+      body: JSON.stringify({ messages: msgs, situation, conversationId: convId, onboardingData }),
     });
 
     if (response.status === 401) { router.push('/auth'); return; }

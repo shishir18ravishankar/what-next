@@ -414,10 +414,17 @@ export async function POST(req: NextRequest) {
       messages,
       situation,
       conversationId,
+      onboardingData,
     }: {
       messages: Array<{ role: 'user' | 'assistant'; content: string }>;
       situation: string;
       conversationId: string | null;
+      onboardingData?: {
+        name: string;
+        city: string;
+        stream: string;
+        timeline: string;
+      } | null;
     } = await req.json();
 
     if (!process.env.GROQ_API_KEY) {
@@ -442,6 +449,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const systemPrompt = onboardingData
+      ? SYSTEM_PROMPT + `\n\n---\n\nSTUDENT PROFILE (collected before chat — use this from your very first message):\n- Name: ${onboardingData.name}\n- City: ${onboardingData.city}\n- Stream: ${onboardingData.stream}\n- Current stage: ${onboardingData.timeline}\n\nGreet them by name immediately. Make it feel personal from message one.`
+      : SYSTEM_PROMPT;
+
     const lastUserMessage =
       messages.length > 0
         ? messages
@@ -460,7 +471,7 @@ export async function POST(req: NextRequest) {
     const completion = await groq.chat.completions.create({
       model: GROQ_CHAT_MODEL,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt },
         ...messages,
       ],
       temperature: 0.7,

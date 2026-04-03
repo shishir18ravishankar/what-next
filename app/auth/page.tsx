@@ -21,12 +21,15 @@ export default function AuthPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  const redirectAfterAuth = () => {
+    const onboarded = Boolean(localStorage.getItem('onboardingData'));
+    router.push(onboarded ? '/chat' : '/onboarding');
+  };
+
   useEffect(() => {
     const checkExistingSession = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        router.push('/chat');
-      }
+      if (user) redirectAfterAuth();
       setPageLoading(false);
     };
     checkExistingSession();
@@ -61,7 +64,7 @@ export default function AuthPage() {
           return;
         }
 
-        router.push('/chat');
+        redirectAfterAuth();
       } else {
         const { data, error } = await supabase.auth.signUp({
           email,
@@ -89,7 +92,7 @@ export default function AuthPage() {
           return;
         }
 
-        router.push('/chat');
+        redirectAfterAuth();
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication');
