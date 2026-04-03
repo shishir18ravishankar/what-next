@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -28,10 +30,13 @@ type ConversationSummary = {
 
 type Situation = 'no_idea' | 'comparing' | 'unsure';
 
+const SITUATION_SIGNAL = '[SHOW_SITUATION_BUTTONS]';
+
 const SITUATION_LABELS: Record<string, string> = {
   no_idea: 'No idea yet',
   comparing: 'Comparing options',
   unsure: 'Chosen but unsure',
+  pending: 'New chat',
 };
 
 const SITUATION_OPTIONS: { value: Situation; label: string }[] = [
@@ -45,6 +50,19 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
 }
 
+/** Strip [SHOW_SITUATION_BUTTONS] from all messages; flag if the last assistant message had it. */
+function processMessages(msgs: Message[]): { messages: Message[]; showButtons: boolean } {
+  let showButtons = false;
+  const processed = msgs.map((msg, i) => {
+    if (msg.role === 'assistant' && msg.content.includes(SITUATION_SIGNAL)) {
+      if (i === msgs.length - 1) showButtons = true;
+      return { ...msg, content: msg.content.replace(SITUATION_SIGNAL, '').trim() };
+    }
+    return msg;
+  });
+  return { messages: processed, showButtons };
+}
+
 export default function ChatPage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -52,14 +70,12 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [showSituationButtons, setShowSituationButtons] = useState(false);
   const [showFinishButton, setShowFinishButton] = useState(false);
   const [generatingRecommendation, setGeneratingRecommendation] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectingSituation, setSelectingSituation] = useState(false);
-  // true when we're showing the fresh "pick a situation" screen (no conversation yet)
-  const [showSituationPicker, setShowSituationPicker] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -84,6 +100,73 @@ export default function ChatPage() {
     if (data) setConversations(data);
   }, [supabase]);
 
+  const estimateStage = (msgs: Message[]) => {
+    if (msgs.length >= 12) setShowFinishButton(true);
+  };
+
+  /** Call the AI with the current message list and handle the response. */
+  const callAI = async (
+    convId: string,
+    msgs: Message[],
+    situation: string,
+  ): Promise<void> => {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: await chatApiHeaders(),
+      body: JSON.stringify({ messages: msgs, situation, conversationId: convId }),
+    });
+
+    if (response.status === 401) { router.push('/auth'); return; }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error || `Chat request failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    if (!data?.message) throw new Error('Chat succeeded but no assistant message was returned');
+
+    const raw: string = data.message;
+    const hasSituationSignal = raw.includes(SITUATION_SIGNAL);
+    const cleanContent = hasSituationSignal ? raw.replace(SITUATION_SIGNAL, '').trim() : raw;
+
+    const updated = [...msgs, { role: 'assistant' as const, content: cleanContent }];
+    setMessages(updated);
+    setShowSituationButtons(hasSituationSignal);
+    estimateStage(updated);
+  };
+
+  /** Create a fresh conversation in the DB and get the AI's Phase 0 opener. */
+  const beginNewConversation = async (userId: string): Promise<void> => {
+    const { data: inserted, error: insertError } = await supabase
+      .from('conversations')
+      .insert({ user_id: userId, situation: 'pending', messages: [], completed: false })
+      .select('id')
+      .single();
+
+    if (insertError || !inserted?.id) {
+      setApiError(insertError?.message ?? 'Could not start a new conversation. Please try again.');
+      return;
+    }
+
+    const newConvId = inserted.id;
+    setConversationId(newConvId);
+    setMessages([]);
+    setShowSituationButtons(false);
+    setShowFinishButton(false);
+    setApiError(null);
+
+    await fetchConversations(userId);
+
+    setSending(true);
+    try {
+      await callAI(newConvId, [], 'pending');
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSending(false);
+    }
+  };
+
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -92,30 +175,28 @@ export default function ChatPage() {
         return;
       }
       setUser(user);
-
       await fetchConversations(user.id);
 
       const conversationIdFromQuery = searchParams.get('conversationId');
 
       if (conversationIdFromQuery) {
-        // Load a specific conversation
-        const { data: conversations } = await supabase
+        const { data: convData } = await supabase
           .from('conversations')
           .select('*')
           .eq('user_id', user.id)
           .eq('id', conversationIdFromQuery);
 
-        if (conversations && conversations.length > 0) {
-          const conv = conversations[0];
+        if (convData && convData.length > 0) {
+          const conv = convData[0];
           setConversationId(conv.id);
-          setMessages(conv.messages || []);
-          estimateStage(conv.messages || []);
-          setShowSituationPicker(false);
+          const { messages: processed, showButtons } = processMessages(conv.messages || []);
+          setMessages(processed);
+          setShowSituationButtons(showButtons);
+          estimateStage(processed);
         } else {
-          setShowSituationPicker(true);
+          await beginNewConversation(user.id);
         }
       } else {
-        // Try to find an in-progress conversation
         const { data: inProgress } = await supabase
           .from('conversations')
           .select('*')
@@ -128,18 +209,26 @@ export default function ChatPage() {
           const conv = inProgress[0];
           setConversationId(conv.id);
           const msgs = conv.messages || [];
-          setMessages(msgs);
+
           if (msgs.length === 0) {
-            // Conversation exists but no messages yet — send initial AI message
-            const situation = localStorage.getItem('situation') || conv.situation;
-            await sendInitialMessage(conv.id, situation);
+            // Conversation exists but AI hasn't spoken yet
+            setSending(true);
+            try {
+              await callAI(conv.id, [], conv.situation ?? 'pending');
+            } catch (error) {
+              setApiError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setSending(false);
+            }
           } else {
-            estimateStage(msgs);
+            const { messages: processed, showButtons } = processMessages(msgs);
+            setMessages(processed);
+            setShowSituationButtons(showButtons);
+            estimateStage(processed);
           }
-          setShowSituationPicker(false);
         } else {
-          // No conversation at all — show situation picker
-          setShowSituationPicker(true);
+          // No conversation at all — start Phase 0 immediately
+          await beginNewConversation(user.id);
         }
       }
 
@@ -154,111 +243,15 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const estimateStage = (msgs: Message[]) => {
-    if (msgs.length >= 12) setShowFinishButton(true);
-  };
-
-  const sendInitialMessage = async (convId: string, situation: string) => {
-    setSending(true);
-    setApiError(null);
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: await chatApiHeaders(),
-        body: JSON.stringify({ messages: [], situation, conversationId: convId }),
-      });
-
-      if (response.status === 401) { router.push('/auth'); return; }
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || `Chat request failed (${response.status})`);
-      }
-
-      const data = await response.json();
-      if (!data?.message) throw new Error('Chat succeeded but no assistant message was returned');
-      setMessages([{ role: 'assistant' as const, content: data.message }]);
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const selectSituation = async (situation: Situation) => {
-    setSelectingSituation(true);
-    setApiError(null);
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError || !userData?.user) {
-      setSelectingSituation(false);
-      router.push('/auth');
-      return;
-    }
-
-    localStorage.setItem('situation', situation);
-
-    const { data: inserted, error: insertError } = await supabase
-      .from('conversations')
-      .insert({ user_id: userData.user.id, situation, messages: [], completed: false })
-      .select('id')
-      .single();
-
-    if (insertError || !inserted?.id) {
-      setApiError(insertError?.message ?? 'Could not start a new conversation. Please try again.');
-      setSelectingSituation(false);
-      return;
-    }
-
-    const newConvId = inserted.id;
-    setConversationId(newConvId);
-    setShowSituationPicker(false);
-    setMessages([]);
-
-    // Fetch updated conversation list
-    await fetchConversations(userData.user.id);
-
-    // Send user's situation choice as first message
-    const situationLabel = SITUATION_OPTIONS.find(o => o.value === situation)?.label ?? situation;
-    const userMsg: Message = { role: 'user', content: situationLabel };
-    setMessages([userMsg]);
-    setSending(true);
-
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: await chatApiHeaders(),
-        body: JSON.stringify({ messages: [userMsg], situation, conversationId: newConvId }),
-      });
-
-      if (response.status === 401) { router.push('/auth'); return; }
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || `Chat request failed (${response.status})`);
-      }
-
-      const data = await response.json();
-      if (!data?.message) throw new Error('No assistant message returned');
-      const updated: Message[] = [...[userMsg], { role: 'assistant' as const, content: data.message }];
-      setMessages(updated);
-      estimateStage(updated);
-    } catch (error) {
-      setApiError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSending(false);
-      setSelectingSituation(false);
-    }
-  };
-
-  const startNewChat = () => {
-    setConversationId(null);
-    setMessages([]);
-    setShowFinishButton(false);
-    setGeneratingRecommendation(false);
-    setApiError(null);
-    setShowSituationPicker(true);
+  const startNewChat = async () => {
     setSidebarOpen(false);
-    // Clear URL param without reload
     window.history.replaceState({}, '', '/chat');
+    setGeneratingRecommendation(false);
+
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) { router.push('/auth'); return; }
+
+    await beginNewConversation(userData.user.id);
   };
 
   const loadConversation = async (conv: ConversationSummary) => {
@@ -271,11 +264,12 @@ export default function ChatPage() {
       .single();
     if (data) {
       setConversationId(data.id);
-      const msgs = data.messages || [];
-      setMessages(msgs);
-      estimateStage(msgs);
-      setShowSituationPicker(false);
-      setShowFinishButton(msgs.length >= 12);
+      const { messages: processed, showButtons } = processMessages(data.messages || []);
+      setMessages(processed);
+      setShowSituationButtons(showButtons);
+      setShowFinishButton(processed.length >= 12);
+      setGeneratingRecommendation(false);
+      setApiError(null);
     }
     setLoading(false);
   };
@@ -283,6 +277,35 @@ export default function ChatPage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     router.push('/');
+  };
+
+  /** User clicked one of the 3 situation buttons — send it as a message. */
+  const selectSituation = async (situation: Situation) => {
+    if (!conversationId) return;
+    setShowSituationButtons(false);
+
+    // Persist the situation on the conversation row
+    await supabase
+      .from('conversations')
+      .update({ situation })
+      .eq('id', conversationId);
+
+    localStorage.setItem('situation', situation);
+
+    const label = SITUATION_OPTIONS.find(o => o.value === situation)?.label ?? situation;
+    const userMsg: Message = { role: 'user', content: label };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setSending(true);
+    setApiError(null);
+
+    try {
+      await callAI(conversationId, newMessages, situation);
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSending(false);
+    }
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -293,31 +316,16 @@ export default function ChatPage() {
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
+    setShowSituationButtons(false);
     setSending(true);
     setApiError(null);
 
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: await chatApiHeaders(),
-        body: JSON.stringify({
-          messages: newMessages,
-          situation: localStorage.getItem('situation'),
-          conversationId,
-        }),
-      });
-
-      if (response.status === 401) { router.push('/auth'); return; }
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error || `Chat request failed (${response.status})`);
-      }
-
-      const data = await response.json();
-      if (!data?.message) throw new Error('Chat succeeded but no assistant message was returned');
-      const updatedMessages = [...newMessages, { role: 'assistant' as const, content: data.message }];
-      setMessages(updatedMessages);
-      estimateStage(updatedMessages);
+      await callAI(
+        conversationId,
+        newMessages,
+        localStorage.getItem('situation') ?? 'pending',
+      );
     } catch (error) {
       setApiError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -376,7 +384,6 @@ export default function ChatPage() {
         <div className="flex items-center gap-2 px-4 py-5 border-b border-white/10">
           <Sparkles className="w-5 h-5 text-[#6C63FF]" />
           <span className="text-lg font-bold">What Next</span>
-          {/* Mobile close button */}
           <button
             className="ml-auto md:hidden text-white/60 hover:text-white"
             onClick={() => setSidebarOpen(false)}
@@ -389,8 +396,10 @@ export default function ChatPage() {
         <div className="px-3 pt-3">
           <button
             onClick={startNewChat}
+            disabled={sending}
             className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium
-              bg-[#6C63FF] hover:bg-[#5B52E8] transition-colors text-white"
+              bg-[#6C63FF] hover:bg-[#5B52E8] transition-colors text-white
+              disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <PenSquare className="w-4 h-4" />
             New Chat
@@ -466,42 +475,6 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* ── SITUATION PICKER (replaces /start) ── */}
-            {showSituationPicker && (
-              <>
-                {/* AI welcome bubble */}
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 bg-gray-100 text-[#1A1A2E]">
-                    <p className="whitespace-pre-wrap">
-                      Hi! I'm here to help you figure out what's right for you after 12th grade. To get started, which of these best describes your situation?
-                    </p>
-                  </div>
-                </div>
-
-                {/* 3 option buttons below the AI message */}
-                <div className="flex flex-col gap-2 pl-2">
-                  {SITUATION_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => selectSituation(option.value)}
-                      disabled={selectingSituation}
-                      className="self-start px-4 py-2.5 rounded-xl border-2 border-[#6C63FF] text-[#6C63FF] text-sm font-medium
-                        hover:bg-[#6C63FF] hover:text-white transition-all duration-200
-                        disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                  {selectingSituation && (
-                    <div className="flex items-center gap-2 text-[#6C63FF] text-sm mt-1">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Starting your chat...</span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
             {/* ── CHAT MESSAGES ── */}
             {messages.map((message, index) => (
               <div
@@ -519,6 +492,22 @@ export default function ChatPage() {
                 </div>
               </div>
             ))}
+
+            {/* ── SITUATION BUTTONS (shown when AI signals [SHOW_SITUATION_BUTTONS]) ── */}
+            {showSituationButtons && !sending && (
+              <div className="flex flex-col gap-2 pl-2">
+                {SITUATION_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => selectSituation(option.value)}
+                    className="self-start px-4 py-2.5 rounded-xl border-2 border-[#6C63FF] text-[#6C63FF] text-sm font-medium
+                      hover:bg-[#6C63FF] hover:text-white transition-all duration-200"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {sending && (
               <div className="flex justify-start">
@@ -552,8 +541,8 @@ export default function ChatPage() {
           </div>
         </main>
 
-        {/* Input bar (hidden when showing situation picker and no conversation started) */}
-        {!showSituationPicker && (
+        {/* Input bar — hidden only while situation buttons are visible */}
+        {!showSituationButtons && (
           <div className="border-t border-gray-200 px-6 py-4 bg-white">
             <form onSubmit={sendMessage} className="max-w-3xl mx-auto">
               <div className="flex gap-2">
