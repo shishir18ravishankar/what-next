@@ -21,6 +21,7 @@ export default function OnboardingPage() {
   const [timeline, setTimeline] = useState('');
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -28,8 +29,9 @@ export default function OnboardingPage() {
     const check = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/auth'); return; }
-      // Already onboarded — skip straight to chat
-      if (localStorage.getItem('onboardingData')) { router.push('/chat'); return; }
+      setUserId(user.id);
+      // Already onboarded for this user — skip straight to chat
+      if (localStorage.getItem(`onboardingData_${user.id}`)) { router.push('/chat'); return; }
       setPageLoading(false);
     };
     check();
@@ -38,9 +40,9 @@ export default function OnboardingPage() {
   const canContinue = name.trim() && city.trim() && stream && timeline;
 
   const handleContinue = () => {
-    if (!canContinue || loading) return;
+    if (!canContinue || loading || !userId) return;
     setLoading(true);
-    localStorage.setItem('onboardingData', JSON.stringify({
+    localStorage.setItem(`onboardingData_${userId}`, JSON.stringify({
       name: name.trim(),
       city: city.trim(),
       stream,

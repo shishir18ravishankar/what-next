@@ -109,10 +109,11 @@ export default function ChatPage() {
     convId: string,
     msgs: Message[],
     situation: string,
+    userId: string,
   ): Promise<void> => {
     let onboardingData: object | null = null;
     try {
-      const raw = localStorage.getItem('onboardingData');
+      const raw = localStorage.getItem(`onboardingData_${userId}`);
       if (raw) onboardingData = JSON.parse(raw);
     } catch {}
 
@@ -165,7 +166,7 @@ export default function ChatPage() {
 
     setSending(true);
     try {
-      await callAI(newConvId, [], 'pending');
+      await callAI(newConvId, [], 'pending', userId);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -220,7 +221,7 @@ export default function ChatPage() {
             // Conversation exists but AI hasn't spoken yet
             setSending(true);
             try {
-              await callAI(conv.id, [], conv.situation ?? 'pending');
+              await callAI(conv.id, [], conv.situation ?? 'pending', user.id);
             } catch (error) {
               setApiError(error instanceof Error ? error.message : String(error));
             } finally {
@@ -306,7 +307,7 @@ export default function ChatPage() {
     setApiError(null);
 
     try {
-      await callAI(conversationId, newMessages, situation);
+      await callAI(conversationId, newMessages, situation, user!.id);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -331,6 +332,7 @@ export default function ChatPage() {
         conversationId,
         newMessages,
         localStorage.getItem('situation') ?? 'pending',
+        user!.id,
       );
     } catch (error) {
       setApiError(error instanceof Error ? error.message : String(error));
