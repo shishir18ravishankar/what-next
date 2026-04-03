@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { getUserForApiRoute } from '@/lib/supabase/api-route';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
 const GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `You are the AI brain behind "What Next" — a career guidance platform for Indian students who just finished or are about to finish 12th grade.
@@ -426,6 +422,8 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
     if (!conversationId) {
       return NextResponse.json(

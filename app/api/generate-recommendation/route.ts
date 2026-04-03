@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { getUserForApiRoute } from '@/lib/supabase/api-route';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 export async function POST(req: NextRequest) {
@@ -18,6 +14,8 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
     const { supabase, user, error: authError } = await getUserForApiRoute(req);
 
