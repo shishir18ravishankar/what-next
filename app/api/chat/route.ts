@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { getUserForApiRoute } from '@/lib/supabase/api-route';
 
-const GROQ_CHAT_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `CRITICAL FORMAT RULES — ABOVE ALL ELSE:
 - Maximum 2-3 lines per message. Hard limit. Count before sending.
