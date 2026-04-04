@@ -31,6 +31,7 @@ type ConversationSummary = {
 type Situation = 'no_idea' | 'comparing' | 'unsure';
 
 const SITUATION_SIGNAL = '[SHOW_SITUATION_BUTTONS]';
+const RECOMMENDATION_SIGNAL = '[RECOMMENDATION_READY]';
 
 const SITUATION_LABELS: Record<string, string> = {
   no_idea: 'No idea yet',
@@ -44,6 +45,8 @@ const SITUATION_OPTIONS: { value: Situation; label: string }[] = [
   { value: 'comparing', label: "I'm deciding between a few options" },
   { value: 'unsure', label: "I chose something but I'm not sure" },
 ];
+
+const SITUATION_USER_MESSAGES = SITUATION_OPTIONS.map(o => o.label);
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -63,6 +66,34 @@ function processMessages(msgs: Message[]): { messages: Message[]; showButtons: b
   return { messages: processed, showButtons };
 }
 
+/** Check if a situation button has already been selected in this conversation. */
+function hasSituationSelected(msgs: Message[]): boolean {
+  return msgs.some(
+    m => m.role === 'user' && SITUATION_USER_MESSAGES.includes(m.content)
+  );
+}
+
+/** Strip [RECOMMENDATION_READY] and the JSON block that follows. */
+function stripRecommendationSignal(content: string): { clean: string; hasSignal: boolean } {
+  const idx = content.indexOf(RECOMMENDATION_SIGNAL);
+  if (idx === -1) return { clean: content, hasSignal: false };
+  return { clean: content.slice(0, idx).trim(), hasSignal: true };
+}
+
+/**
+ * Parse numbered items after "Here are your options:" in an AI message.
+ * Returns an array of option strings, or empty array if pattern not found.
+ */
+function parseOptions(content: string): string[] {
+  const lower = content.toLowerCase();
+  const trigger = 'here are your options:';
+  const triggerIdx = lower.indexOf(trigger);
+  if (triggerIdx === -1) return [];
+  const after = content.slice(triggerIdx + trigger.length);
+  const matches = [...after.matchAll(/^\s*\d+\.\s+(.+)$/gm)];
+  return matches.map(m => m[1].trim()).filter(Boolean);
+}
+
 export default function ChatPage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -71,8 +102,8 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [showSituationButtons, setShowSituationButtons] = useState(false);
-  const [showFinishButton, setShowFinishButton] = useState(false);
-  const [generatingRecommendation, setGeneratingRecommendation] = useState(false);
+  const [situationShown, setSituationShown] = useState(false);
+  const [recommendationReady, setRecommendationReady] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -100,16 +131,17 @@ export default function ChatPage() {
     if (data) setConversations(data);
   }, [supabase]);
 
-  const estimateStage = (msgs: Message[]) => {
-    if (msgs.length >= 12) setShowFinishButton(true);
-  };
-
-  /** Call the AI with the current message list and handle the response. */
+  /**
+   * Call the AI with the current message list and handle the response.
+   * alreadyShown: pass true when situation has just been selected to prevent
+   * stale-closure issues with situationShown state.
+   */
   const callAI = async (
     convId: string,
     msgs: Message[],
     situation: string,
     userId: string,
+    alreadyShown: boolean = false,
   ): Promise<void> => {
     let onboardingData: object | null = null;
     try {
@@ -134,12 +166,16 @@ export default function ChatPage() {
 
     const raw: string = data.message;
     const hasSituationSignal = raw.includes(SITUATION_SIGNAL);
-    const cleanContent = hasSituationSignal ? raw.replace(SITUATION_SIGNAL, '').trim() : raw;
+    const { clean: withoutRecommendation, hasSignal: hasRecommendation } = stripRecommendationSignal(raw);
+    const cleanContent = hasSituationSignal
+      ? withoutRecommendation.replace(SITUATION_SIGNAL, '').trim()
+      : withoutRecommendation;
 
     const updated = [...msgs, { role: 'assistant' as const, content: cleanContent }];
     setMessages(updated);
-    setShowSituationButtons(hasSituationSignal);
-    estimateStage(updated);
+
+    if (hasSituationSignal && !alreadyShown) setShowSituationButtons(true);
+    if (hasRecommendation) setRecommendationReady(true);
   };
 
   /** Create a fresh conversation in the DB and get the AI's Phase 0 opener. */
@@ -159,7 +195,8 @@ export default function ChatPage() {
     setConversationId(newConvId);
     setMessages([]);
     setShowSituationButtons(false);
-    setShowFinishButton(false);
+    setSituationShown(false);
+    setRecommendationReady(false);
     setApiError(null);
 
     await fetchConversations(userId);
@@ -197,9 +234,10 @@ export default function ChatPage() {
           const conv = convData[0];
           setConversationId(conv.id);
           const { messages: processed, showButtons } = processMessages(conv.messages || []);
+          const alreadySelected = hasSituationSelected(processed);
           setMessages(processed);
-          setShowSituationButtons(showButtons);
-          estimateStage(processed);
+          setSituationShown(alreadySelected);
+          setShowSituationButtons(showButtons && !alreadySelected);
         } else {
           await beginNewConversation(user.id);
         }
@@ -218,7 +256,6 @@ export default function ChatPage() {
           const msgs = conv.messages || [];
 
           if (msgs.length === 0) {
-            // Conversation exists but AI hasn't spoken yet
             setSending(true);
             try {
               await callAI(conv.id, [], conv.situation ?? 'pending', user.id);
@@ -229,12 +266,12 @@ export default function ChatPage() {
             }
           } else {
             const { messages: processed, showButtons } = processMessages(msgs);
+            const alreadySelected = hasSituationSelected(processed);
             setMessages(processed);
-            setShowSituationButtons(showButtons);
-            estimateStage(processed);
+            setSituationShown(alreadySelected);
+            setShowSituationButtons(showButtons && !alreadySelected);
           }
         } else {
-          // No conversation at all — start Phase 0 immediately
           await beginNewConversation(user.id);
         }
       }
@@ -253,7 +290,7 @@ export default function ChatPage() {
   const startNewChat = async () => {
     setSidebarOpen(false);
     window.history.replaceState({}, '', '/chat');
-    setGeneratingRecommendation(false);
+    setRecommendationReady(false);
 
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) { router.push('/auth'); return; }
@@ -272,10 +309,11 @@ export default function ChatPage() {
     if (data) {
       setConversationId(data.id);
       const { messages: processed, showButtons } = processMessages(data.messages || []);
+      const alreadySelected = hasSituationSelected(processed);
       setMessages(processed);
-      setShowSituationButtons(showButtons);
-      setShowFinishButton(processed.length >= 12);
-      setGeneratingRecommendation(false);
+      setSituationShown(alreadySelected);
+      setShowSituationButtons(showButtons && !alreadySelected);
+      setRecommendationReady(false);
       setApiError(null);
     }
     setLoading(false);
@@ -290,8 +328,8 @@ export default function ChatPage() {
   const selectSituation = async (situation: Situation) => {
     if (!conversationId) return;
     setShowSituationButtons(false);
+    setSituationShown(true);
 
-    // Persist the situation on the conversation row
     await supabase
       .from('conversations')
       .update({ situation })
@@ -307,7 +345,7 @@ export default function ChatPage() {
     setApiError(null);
 
     try {
-      await callAI(conversationId, newMessages, situation, user!.id);
+      await callAI(conversationId, newMessages, situation, user!.id, true);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -333,6 +371,7 @@ export default function ChatPage() {
         newMessages,
         localStorage.getItem('situation') ?? 'pending',
         user!.id,
+        situationShown,
       );
     } catch (error) {
       setApiError(error instanceof Error ? error.message : String(error));
@@ -341,24 +380,27 @@ export default function ChatPage() {
     }
   };
 
-  const finishAndGenerateRecommendation = async () => {
-    if (!conversationId) return;
-    setGeneratingRecommendation(true);
+  /** Send a pill option as a user message. */
+  const sendPillMessage = async (text: string) => {
+    if (sending || !conversationId) return;
+    const userMessage: Message = { role: 'user', content: text };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setSending(true);
+    setApiError(null);
 
     try {
-      const response = await fetch('/api/generate-recommendation', {
-        method: 'POST',
-        headers: await chatApiHeaders(),
-        body: JSON.stringify({ messages, conversationId }),
-      });
-
-      if (response.status === 401) { router.push('/auth'); return; }
-      const data = await response.json();
-      if (data.recommendation) router.push('/results');
+      await callAI(
+        conversationId,
+        newMessages,
+        localStorage.getItem('situation') ?? 'pending',
+        user!.id,
+        situationShown,
+      );
     } catch (error) {
-      console.error('Error generating recommendation:', error);
+      setApiError(error instanceof Error ? error.message : String(error));
     } finally {
-      setGeneratingRecommendation(false);
+      setSending(false);
     }
   };
 
@@ -369,6 +411,8 @@ export default function ChatPage() {
       </div>
     );
   }
+
+  const lastAssistantIdx = messages.reduce((acc, msg, i) => msg.role === 'assistant' ? i : acc, -1);
 
   return (
     <div className="flex h-screen bg-white overflow-hidden">
@@ -484,25 +528,44 @@ export default function ChatPage() {
             )}
 
             {/* ── CHAT MESSAGES ── */}
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    message.role === 'user'
-                      ? 'rounded-tr-sm bg-[#6C63FF] text-white'
-                      : 'rounded-tl-sm bg-gray-100 text-[#1A1A2E]'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+            {messages.map((message, index) => {
+              const pills =
+                message.role === 'assistant' && index === lastAssistantIdx && !sending
+                  ? parseOptions(message.content)
+                  : [];
+              return (
+                <div key={index}>
+                  <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                        message.role === 'user'
+                          ? 'rounded-tr-sm bg-[#6C63FF] text-white'
+                          : 'rounded-tl-sm bg-gray-100 text-[#1A1A2E]'
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    </div>
+                  </div>
+                  {pills.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2 pl-2">
+                      {pills.map((pill, pi) => (
+                        <button
+                          key={pi}
+                          onClick={() => sendPillMessage(pill)}
+                          className="px-3 py-1.5 rounded-full border border-[#6C63FF] text-[#6C63FF] text-sm
+                            hover:bg-[#6C63FF] hover:text-white transition-all duration-200"
+                        >
+                          {pill}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
-            {/* ── SITUATION BUTTONS (shown when AI signals [SHOW_SITUATION_BUTTONS]) ── */}
-            {showSituationButtons && !sending && (
+            {/* ── SITUATION BUTTONS (shown only if not yet selected) ── */}
+            {showSituationButtons && !situationShown && !sending && (
               <div className="flex flex-col gap-2 pl-2">
                 {SITUATION_OPTIONS.map((option) => (
                   <button
@@ -525,31 +588,18 @@ export default function ChatPage() {
               </div>
             )}
 
-            {showFinishButton && !generatingRecommendation && (
-              <div className="flex justify-center pt-4">
-                <button
-                  onClick={finishAndGenerateRecommendation}
-                  className="bg-green-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-600 transition-colors"
-                >
-                  I have enough to give you a recommendation. Ready?
-                </button>
-              </div>
-            )}
-
-            {generatingRecommendation && (
-              <div className="flex justify-center pt-4">
-                <div className="flex items-center gap-2 text-[#6C63FF]">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Generating your personalized recommendation...</span>
-                </div>
-              </div>
-            )}
-
             <div ref={messagesEndRef} />
           </div>
         </main>
 
-        {/* Input bar — hidden only while situation buttons are visible */}
+        {/* Recommendation ready banner */}
+        {recommendationReady && (
+          <div className="border-t border-green-200 bg-green-50 px-6 py-3 text-center text-sm font-medium text-green-700">
+            Conversation complete! Results page coming soon.
+          </div>
+        )}
+
+        {/* Input bar — hidden only while situation buttons are pending selection */}
         {!showSituationButtons && (
           <div className="border-t border-gray-200 px-6 py-4 bg-white">
             <form onSubmit={sendMessage} className="max-w-3xl mx-auto">
@@ -560,11 +610,11 @@ export default function ChatPage() {
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Type your answer..."
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#6C63FF] focus:border-transparent"
-                  disabled={sending || generatingRecommendation}
+                  disabled={sending}
                 />
                 <button
                   type="submit"
-                  disabled={sending || !input.trim() || generatingRecommendation}
+                  disabled={sending || !input.trim()}
                   className="bg-[#6C63FF] text-white px-5 py-3 rounded-xl hover:bg-[#5B52E8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send className="w-5 h-5" />
