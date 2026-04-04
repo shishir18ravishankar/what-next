@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { getUserForApiRoute } from '@/lib/supabase/api-route';
 
-const GROQ_CHAT_MODEL = 'meta-llama/llama-4-maverick-17b-128e-instruct';
+const GROQ_CHAT_MODEL = 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `You are the AI brain behind "What Next" — a career guidance platform for Indian students who just finished or are about to finish 12th grade.
 
