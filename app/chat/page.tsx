@@ -90,7 +90,7 @@ function parseOptions(content: string): string[] {
   const triggerIdx = lower.indexOf(trigger);
   if (triggerIdx === -1) return [];
   const after = content.slice(triggerIdx + trigger.length);
-  const matches = [...after.matchAll(/^\s*\d+\.\s+(.+)$/gm)];
+  const matches = Array.from(after.matchAll(/^\s*\d+\.\s+(.+)$/gm));
   return matches.map(m => m[1].trim()).filter(Boolean);
 }
 
