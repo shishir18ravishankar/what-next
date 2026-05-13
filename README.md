@@ -1,200 +1,110 @@
-# What Next - AI Career Guidance Platform
+# What Next — AI Career Guidance for Indian Students
 
-An AI-powered career guidance platform for Indian students who just completed 12th grade and are confused about choosing a bachelor's degree.
+> "That one older cousin everyone wishes they had" — warm, honest, India-aware AI that helps students figure out what to study after 12th grade.
 
-## Features
+🔗 **Live:** [whatnext-app.vercel.app](https://whatnext-app.vercel.app)
 
-- **Landing Page**: Clean, modern landing page with clear value proposition
-- **Authentication**: Secure email/password authentication via Supabase
-- **Situation Selection**: Three intuitive options to describe the student's current state
-- **AI Chat Interface**: Conversational AI that asks thoughtful questions using a 5-axis framework
-- **Personalized Recommendations**: Structured career recommendations with clear reasoning
-- **Clarity Report**: Downloadable report summarizing the conversation and recommendations
-- **Mentor Requests**: Form to connect with mentors for further guidance
+---
+
+## The Problem
+
+Every year, millions of Indian students finish 12th grade and face one of the most important decisions of their life — choosing a bachelor's degree — with almost no real guidance.
+
+Parents give outdated advice. Teachers default to engineering or medicine. Professional career counselors cost ₹5,000–20,000 a session. The result: students choose blindly, regret it, and waste years.
+
+The problem isn't lack of intelligence. It's lack of structured clarity and honest guidance.
+
+---
+
+## What What Next Does
+
+What Next is an AI that has a real conversation with the student — not a quiz, not a chatbot. It figures out who they actually are, then gives them a personalised career recommendation with honest reasoning.
+
+Three student situations are supported, each with a distinct conversation flow:
+
+| Situation | What the student feels | What the AI does |
+|---|---|---|
+| **No idea** | Completely lost, don't know where to start | Explores personality, interests, strengths, finances, market |
+| **Comparing options** | Have 2–4 choices in mind | Goes deep on each option, ends with visual comparison |
+| **Chose but unsure** | Has something in mind but needs validation | Validates or honestly challenges the choice with evidence |
+
+At the end, the student gets a structured recommendation: best fit, secondary option, one path to avoid — all personalised to what *they* said, not generic advice.
+
+---
+
+## How the AI Evaluates Students
+
+Every conversation covers 5 dimensions naturally — never as a form or quiz:
+
+- **Interest alignment** — what genuinely excites them (not what they're "supposed" to like)
+- **Skill strengths** — what they're naturally good at, uncovered indirectly
+- **Lifestyle preferences** — stability vs creativity, solo vs team, metro vs hometown
+- **Financial feasibility** — family budget and ROI reality (brought up carefully, not ignored)
+- **India job market demand** — real jobs and growth in India right now, not generic global advice
+
+---
+
+## Key Features
+
+- Adaptive AI conversation that mirrors the student's language — English, Hinglish, whatever they use
+- Phase 0 onboarding — AI gets to know the student before any career talk begins
+- Signal-driven frontend — AI sends `[SHOW_SITUATION_BUTTONS]` and `[RECOMMENDATION_READY]` flags that trigger UI transitions
+- Saved chat history — students can return and continue (ChatGPT-style sidebar)
+- Google OAuth + email login via Supabase
+- Mentor connection — students can request to speak with a young professional in their field *(coming soon)*
+- Downloadable career clarity report with personalised reasoning and 3-year roadmap *(coming soon)*
+
+---
 
 ## Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
-- **Styling**: Tailwind CSS
-- **Database & Auth**: Supabase
-- **AI**: Groq (`llama-3.3-70b-versatile`)
-- **UI Components**: Lucide React icons
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
+| Auth + Database | Supabase (PostgreSQL, Google OAuth, RLS) |
+| AI | Groq API — LLaMA 3.3 70B (conversations) |
+| Deployment | Vercel (auto-deploys on push) |
 
-## Getting Started
+---
 
-### Prerequisites
+## Local Setup
 
-- Node.js 18+ installed
-- A Supabase account and project
-- A Groq API key ([Groq Console](https://console.groq.com/keys))
-
-### Installation
-
-1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/shishir18ravishankar/what-next
 cd what-next
-```
-
-2. Install dependencies:
-```bash
 npm install
 ```
 
-3. Set up environment variables:
+Create `.env.local` — see `.env.example` for required keys (Supabase + Groq).
 
-Create a `.env.local` file in the root directory with the following variables:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-# Supabase publishable key (preferred)
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
-# Legacy fallback (only if you don't have a publishable key)
-# NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-GROQ_API_KEY=your_groq_api_key
-```
-
-**Note**: Add your Supabase and `GROQ_API_KEY` values to `.env.local`.
-
-4. The database schema is already set up in Supabase with the following tables:
-   - `conversations` - Stores chat conversations
-   - `recommendations` - Stores generated career recommendations
-   - `mentor_requests` - Stores mentor connection requests
-
-### Running the Application
-
-Development mode:
 ```bash
 npm run dev
+# → localhost:3000
 ```
 
-Production build:
-```bash
-npm run build
-npm start
-```
+Database tables (`conversations`, `recommendations`, `mentor_requests`) and RLS policies are in `supabase/migrations/`.
 
-The application will be available at `http://localhost:3000`.
+---
 
-## Application Flow
+## Roadmap
 
-1. **Landing Page** (`/`) - Introduction and call-to-action
-2. **Authentication** (`/auth`) - Sign up or sign in
-3. **Situation Selection** (`/start`) - Choose your current situation
-4. **AI Chat** (`/chat`) - Conversational career discovery
-5. **Results** (`/results`) - Personalized recommendations
+- [x] Auth (email + Google OAuth)
+- [x] Onboarding flow
+- [x] Phase 0 AI conversation
+- [x] Situation selection + distinct conversation flows
+- [x] Chat history (Supabase-backed)
+- [ ] Results / recommendation page
+- [ ] Downloadable clarity report (PDF)
+- [ ] Mentor connection feature
+- [ ] College navigation (Phase 2)
+- [ ] Career development during college (Phase 3)
 
-## 5-Axis Career Framework
+---
 
-The AI evaluates students across five key dimensions:
+## SDG Alignment
 
-1. **Interest Alignment**: What subjects/activities energize them?
-2. **Skill Strengths**: What are they naturally good at?
-3. **Lifestyle Preferences**: Stability, creativity, travel, independence?
-4. **Financial Feasibility**: Family budget and ROI expectations
-5. **Job Market Demand**: India-specific opportunities and growth
+**SDG 4** — Quality Education &nbsp;|&nbsp; **SDG 8** — Decent Work and Economic Growth &nbsp;|&nbsp; **SDG 10** — Reduced Inequalities
 
-## Design Guidelines
+---
 
-- **Font**: Inter (Google Fonts)
-- **Primary Color**: #6C63FF (soft purple)
-- **Background**: #FFFFFF (white)
-- **Text**: #1A1A2E (dark)
-- **Mobile-first**: Fully responsive design
-
-## Database Schema
-
-### conversations
-- `id` (uuid, primary key)
-- `user_id` (uuid, foreign key to auth.users)
-- `situation` (text: 'no_idea' | 'comparing' | 'unsure')
-- `messages` (jsonb array)
-- `completed` (boolean)
-- `created_at`, `updated_at` (timestamps)
-
-### recommendations
-- `id` (uuid, primary key)
-- `user_id` (uuid, foreign key to auth.users)
-- `conversation_id` (uuid, foreign key to conversations)
-- `best_fit` (jsonb)
-- `secondary` (jsonb)
-- `avoid` (jsonb)
-- `reasoning` (jsonb)
-- `created_at` (timestamp)
-
-### mentor_requests
-- `id` (uuid, primary key)
-- `user_id` (uuid, foreign key to auth.users)
-- `name` (text)
-- `email` (text)
-- `chosen_field` (text)
-- `message` (text)
-- `created_at` (timestamp)
-
-## API Routes
-
-### POST `/api/chat`
-Handles the AI conversation. Accepts messages and returns AI responses.
-
-**Request body**:
-```json
-{
-  "messages": [...],
-  "situation": "no_idea|comparing|unsure",
-  "conversationId": "uuid"
-}
-```
-
-**Response**:
-```json
-{
-  "message": "AI response text"
-}
-```
-
-### POST `/api/generate-recommendation`
-Generates structured career recommendations based on the full conversation.
-
-**Request body**:
-```json
-{
-  "messages": [...],
-  "conversationId": "uuid"
-}
-```
-
-**Response**:
-```json
-{
-  "recommendation": {
-    "best_fit": {...},
-    "secondary": {...},
-    "avoid": {...},
-    "reasoning": {...}
-  }
-}
-```
-
-## Security
-
-- Row Level Security (RLS) is enabled on all tables
-- Users can only access their own data
-- Authentication is handled securely via Supabase Auth
-- Groq API key is stored as a server-only environment variable (`GROQ_API_KEY`)
-
-## Future Enhancements
-
-- PDF generation for clarity reports (currently generates text file)
-- Email notifications for mentor requests
-- Progress saving and resume functionality
-- Multiple language support
-- Career path comparison tool
-- Integration with educational institutions
-
-## License
-
-MIT
-
-## Support
-
-For issues or questions, please open an issue on GitHub or contact support.
+Built by **Shishir Ravishankar** — AI & Data Science, Presidency University Bangalore  
